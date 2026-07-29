@@ -518,6 +518,8 @@ ul, ol { list-style: none; }
 .footer-contact li { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; font-size: 13.5px; }
 .footer-contact .icon { flex-shrink: 0; }
 .footer-bottom { border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 22px; text-align: center; font-size: 13.5px; color: rgba(255, 255, 255, 0.4); }
+.footer-bottom .admin-link { color: rgba(255, 255, 255, 0.25); font-size: 12px; margin-left: 10px; text-decoration: none; }
+.footer-bottom .admin-link:hover { color: rgba(255, 255, 255, 0.5); }
 
 /* ========================================
    Page Banner
