@@ -11,28 +11,36 @@ document.addEventListener('DOMContentLoaded', function () {
   const menuToggle = document.querySelector('.menu-toggle');
   const mainNav = document.querySelector('.main-nav');
   if (menuToggle && mainNav) {
-    menuToggle.addEventListener('click', function () {
-      mainNav.classList.toggle('open');
+    function setMenuState(isOpen) {
+      mainNav.classList.toggle('open', isOpen);
+      menuToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      menuToggle.setAttribute('aria-label', isOpen ? '關閉選單' : '開啟選單');
+      document.body.classList.toggle('menu-open', isOpen);
+
       const spans = menuToggle.querySelectorAll('span');
-      if (mainNav.classList.contains('open')) {
-        spans[0].style.transform = 'rotate(45deg) translate(5px, 5px)';
-        spans[1].style.opacity = '0';
-        spans[2].style.transform = 'rotate(-45deg) translate(5px, -5px)';
-      } else {
-        spans[0].style.transform = '';
-        spans[1].style.opacity = '';
-        spans[2].style.transform = '';
-      }
+      spans[0].style.transform = isOpen ? 'rotate(45deg) translate(5px, 5px)' : '';
+      spans[1].style.opacity = isOpen ? '0' : '';
+      spans[2].style.transform = isOpen ? 'rotate(-45deg) translate(5px, -5px)' : '';
+    }
+
+    setMenuState(false);
+
+    menuToggle.addEventListener('click', function () {
+      setMenuState(!mainNav.classList.contains('open'));
     });
+
     // Close menu when clicking a link
     mainNav.querySelectorAll('a').forEach(function (link) {
       link.addEventListener('click', function () {
-        mainNav.classList.remove('open');
-        const spans = menuToggle.querySelectorAll('span');
-        spans[0].style.transform = '';
-        spans[1].style.opacity = '';
-        spans[2].style.transform = '';
+        setMenuState(false);
       });
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && mainNav.classList.contains('open')) {
+        setMenuState(false);
+        menuToggle.focus();
+      }
     });
   }
 
