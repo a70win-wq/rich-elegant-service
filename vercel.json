@@ -8,6 +8,7 @@
   "routes": [
     {
       "src": "^/(?:server\\.js|package(?:-lock)?\\.json|vercel\\.json|start\\.sh|api/index\\.js|\\.env(?:\\..*)?|\\.git(?:/.*)?)$",
+      "dest": "/not-found.html",
       "status": 404
     }
   ],
