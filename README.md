@@ -22,14 +22,9 @@ bash start.sh
 ## 後台管理
 
 ### 登入
-預設密碼：`admin123`
+本機測試可以用預設密碼：`admin123`。
 
-### 改密碼
-打開 `admin/index.html`，搵到呢一行：
-```javascript
-var ADMIN_PASSWORD = 'admin123';
-```
-改做你想要嘅密碼。
+網站正式上線前，請喺 Vercel 設定 `ADMIN_PASSWORD`，唔好使用預設密碼。登入成功後，網站會用安全 Cookie 記住登入狀態；文章新增、修改、刪除同圖片上傳都會由伺服器再檢查一次。
 
 ### 新增文章
 1. 登入後台
@@ -93,8 +88,7 @@ WhatsApp 連結格式：`https://wa.me/852XXXXXXXX`（852 係香港區號）
 2. **Vercel**（免費）：https://vercel.com
 3. **GitHub Pages**（免費）：適合純靜態網站
 
-注意：後台管理功能需要 Node.js 伺服器運行，如果只用靜態托管，
-文章管理需要改用其他方式（例如 CMS 服務）。
+注意：Vercel 本身唔係永久硬碟。公開文章可以正常閱讀，但要喺線上長期儲存新文章同圖片，之後要接雲端資料庫／檔案儲存；本機版本會正常儲存喺 `data/articles.json` 同 `uploads/`。
 
 ---
 

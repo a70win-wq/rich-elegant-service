@@ -103,24 +103,31 @@ document.addEventListener('DOMContentLoaded', function () {
   // ---- Articles: load from JSON ----
   const articleContainer = document.getElementById('article-list');
   if (articleContainer) {
-    fetch('data/articles.json')
-      .then(function (r) { return r.json(); })
+      fetch('data/articles.json')
+      .then(function (r) {
+        if (!r.ok) throw new Error('文章資料讀取失敗');
+        return r.json();
+      })
       .then(function (articles) {
+        articles = Array.isArray(articles) ? articles.filter(function (article) {
+          return article.status !== 'draft';
+        }) : [];
         if (!articles || articles.length === 0) {
           articleContainer.innerHTML = '<p style="text-align:center;color:#6b7c93;grid-column:1/-1;">暫無文章，請稍後再回來查看。</p>';
           return;
         }
         articleContainer.innerHTML = articles.map(function (a) {
-          const imgHtml = a.image
-            ? '<img src="' + a.image + '" alt="' + a.title + '">'
+          const safeImage = safeImageUrl(a.image);
+          const imgHtml = safeImage
+            ? '<img src="' + escapeHtml(safeImage) + '" alt="' + escapeHtml(a.title) + '" loading="lazy">'
             : '🏠';
           return '<article class="article-card fade-in visible">' +
             '<div class="thumb">' + imgHtml + '</div>' +
             '<div class="body">' +
-            '<span class="tag">' + (a.category || '知識分享') + '</span>' +
-            '<h3>' + a.title + '</h3>' +
-            '<p>' + (a.excerpt || '') + '</p>' +
-            '<div class="date">' + (a.date || '') + '</div>' +
+            '<span class="tag">' + escapeHtml(a.category || '知識分享') + '</span>' +
+            '<h3>' + escapeHtml(a.title || '') + '</h3>' +
+            '<p>' + escapeHtml(a.excerpt || '') + '</p>' +
+            '<div class="date">' + escapeHtml(a.date || '') + '</div>' +
             '</div></article>';
         }).join('');
       })
@@ -133,3 +140,15 @@ document.addEventListener('DOMContentLoaded', function () {
   const yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 });
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value == null ? '' : value);
+  return div.innerHTML;
+}
+
+function safeImageUrl(url) {
+  if (typeof url !== 'string') return '';
+  if (url.indexOf('/uploads/') === 0 || /^https?:\/\//i.test(url)) return url;
+  return '';
+}
