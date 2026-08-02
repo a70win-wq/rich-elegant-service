@@ -1,9 +1,16 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/index.js": {
       "maxDuration": 10
     }
   },
+  "routes": [
+    {
+      "src": "^/(?:server\\.js|package(?:-lock)?\\.json|vercel\\.json|start\\.sh|api/index\\.js|\\.env(?:\\..*)?|\\.git(?:/.*)?)$",
+      "status": 404
+    }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/admin(.*)", "destination": "/api" },
