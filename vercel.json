@@ -2,19 +2,14 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/index.js": {
-      "maxDuration": 10
+      "maxDuration": 30,
+      "includeFiles": "{*.html,css/**,js/**,assets/**,data/articles.json,admin/index.html}"
     }
   },
   "routes": [
     {
-      "src": "^/(?:server\\.js|package(?:-lock)?\\.json|vercel\\.json|start\\.sh|api/index\\.js|\\.env(?:\\..*)?|\\.git(?:/.*)?)$",
-      "dest": "/not-found.html",
-      "status": 404
+      "src": "/(.*)",
+      "dest": "/api/index.js"
     }
-  ],
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/admin(.*)", "destination": "/api" },
-    { "source": "/(.*)", "destination": "/api" }
   ]
 }

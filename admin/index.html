@@ -136,7 +136,16 @@
     }
     .image-upload-area { font-size: 15px; }
     @media (max-width: 768px) {
-      .admin-nav { display: none; }
+      .admin-body { display: block; }
+      .admin-nav { width:100%; display:flex; flex-wrap:wrap; padding:8px; gap:4px; border-right:0; border-bottom:1px solid #e2e8f0; }
+      .admin-nav a { padding:10px; font-size:14px; }
+      .admin-topbar { padding:0 16px; }
+      .admin-topbar .brand { font-size:14px; }
+      .admin-topbar .brand small { display:none; }
+      .admin-topbar-actions { gap:10px; }
+      .admin-topbar-actions a { font-size:12px; }
+      .admin-table { display:block; overflow-x:auto; }
+      .editor-meta { grid-template-columns:1fr !important; gap:0 !important; }
       .stat-cards { grid-template-columns: 1fr; }
       .admin-content { padding: 20px; }
     }
@@ -148,7 +157,7 @@
   <div id="loginScreen" class="admin-login">
     <div class="login-box">
       <h1>雅博工程公司</h1>
-      <p class="sub">後台管理系統</p>
+      <p class="sub">網誌及最新優惠管理</p>
       <div id="loginError" class="login-error">密碼錯誤，請再試一次</div>
       <div class="form-group">
         <label for="loginPassword">管理員密碼</label>
@@ -214,7 +223,7 @@
               <label>文章標題 *</label>
               <input type="text" id="editTitleInput" placeholder="例如：新樓驗樓必知10大注意事項">
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+            <div class="editor-meta" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
               <div class="form-group">
                 <label>分類</label>
                 <select id="editCategory">
@@ -222,7 +231,7 @@
                   <option value="個案分享">個案分享</option>
                   <option value="驗樓資訊">驗樓資訊</option>
                   <option value="驗窗資訊">驗窗資訊</option>
-                  <option value="公司動態">公司動態</option>
+                  <option value="公司動態">公司動態</option><option value="最新優惠">最新優惠</option>
                 </select>
               </div>
               <div class="form-group">
@@ -231,11 +240,11 @@
               </div>
             </div>
             <div class="form-group">
-              <label>摘要（顯示喺文章列表）</label>
+              <label>摘要（顯示於文章列表）</label>
               <textarea id="editExcerpt" style="min-height:80px;" placeholder="簡短描述文章內容，約50-100字"></textarea>
             </div>
             <div class="form-group">
-              <label>文章內容 *</label>
+              <label>文章內容 *</label><p style="font-size:14px;color:#6b7c93;">可在下方加入相片及宣傳單圖片。優惠請選擇「最新優惠」分類。</p>
               <textarea id="editContent" placeholder="輸入文章內容..."></textarea>
             </div>
             <div class="form-group">
@@ -243,9 +252,9 @@
               <div class="image-upload-area" onclick="document.getElementById('coverUpload').click()">
                 <div class="icon">📷</div>
                 <p>點擊上傳封面圖片</p>
-                <p style="font-size:12px;margin-top:4px;">支援 JPG、PNG、GIF、WebP，最大 10MB</p>
+                <p style="font-size:12px;margin-top:4px;">支援 JPG、PNG、GIF、WebP，最大 3MB</p>
               </div>
-              <input type="file" id="coverUpload" accept="image/*" style="display:none" onchange="uploadCover(this)">
+              <input type="file" id="coverUpload" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" onchange="uploadCover(this)">
               <div id="coverPreview" class="image-preview-grid" style="grid-template-columns:repeat(1,1fr);max-width:300px;"></div>
             </div>
             <div class="form-group">
@@ -253,9 +262,9 @@
               <div class="image-upload-area" onclick="document.getElementById('imagesUpload').click()">
                 <div class="icon">🖼️</div>
                 <p>點擊上傳文章圖片（最多10張）</p>
-                <p style="font-size:12px;margin-top:4px;">支援 JPG、PNG、GIF、WebP，每張最大 10MB</p>
+                <p style="font-size:12px;margin-top:4px;">支援 JPG、PNG、GIF、WebP，每張最大 3MB</p>
               </div>
-              <input type="file" id="imagesUpload" accept="image/*" multiple style="display:none" onchange="uploadImages(this)">
+              <input type="file" id="imagesUpload" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none" onchange="uploadImages(this)">
               <div id="imagesPreview" class="image-preview-grid"></div>
             </div>
             <div class="form-group">
@@ -284,6 +293,9 @@
     var articles = [];
     var coverUrl = '';
     var imageUrls = [];
+    var editingVersion = null;
+    var uploadsInProgress = 0;
+    var saving = false;
 
     // ---- API 同登入 ----
     function apiFetch(url, options) {
@@ -359,6 +371,7 @@
 
     // ---- Navigation ----
     function showPage(page) {
+      if (uploadsInProgress) { showToast('請等候圖片上傳完成後再切換頁面。', true); return; }
       ['dashboard', 'articles', 'editor'].forEach(function (p) {
         document.getElementById('page-' + p).classList.toggle('hidden', p !== page);
       });
@@ -429,18 +442,24 @@
       document.getElementById('articlesList').innerHTML = html;
     }
 
-    // ---- Upload Cover ----
+    function uploadOne(file) {
+      if (file.size > 3 * 1024 * 1024) return Promise.reject(new Error('每張圖片請勿超過 3MB。'));
+      var form = new FormData();
+      form.append('image', file);
+      return apiFetch('/api/upload', { method: 'POST', body: form });
+    }
     function uploadCover(input) {
       if (!input.files || !input.files[0]) return;
-      var formData = new FormData();
-      formData.append('image', input.files[0]);
-      apiFetch('/api/upload', { method: 'POST', body: formData })
-        .then(function (data) {
-          coverUrl = data.url;
-          document.getElementById('coverPreview').innerHTML = '<div class="image-preview-item"><img src="' + esc(data.url) + '"><button class="remove-btn" onclick="removeCover()">✕</button></div>';
-          showToast('封面圖片上傳成功！');
-        })
-        .catch(function (error) { handleApiError(error, '上傳失敗'); });
+      if (uploadsInProgress) { showToast('請等候目前上傳完成。', true); input.value = ''; return; }
+      var file = input.files[0];
+      uploadsInProgress++;
+      showToast('正在上傳封面圖片…');
+      uploadOne(file).then(function (data) {
+        coverUrl = data.url;
+        document.getElementById('coverPreview').innerHTML = '<div class="image-preview-item">' + imageHtml(data.url, '封面圖片') + '<button class="remove-btn" onclick="removeCover()">✕</button></div>';
+        showToast('封面圖片上傳成功！');
+      }).catch(function (error) { handleApiError(error, '上傳失敗'); })
+        .finally(function () { uploadsInProgress--; });
       input.value = '';
     }
 
@@ -449,21 +468,23 @@
       document.getElementById('coverPreview').innerHTML = '';
     }
 
-    // ---- Upload Multiple Images ----
-    function uploadImages(input) {
-      if (!input.files || input.files.length === 0) return;
-      var formData = new FormData();
-      for (var i = 0; i < input.files.length; i++) {
-        formData.append('images', input.files[i]);
-      }
-      apiFetch('/api/upload-multiple', { method: 'POST', body: formData })
-        .then(function (data) {
-          imageUrls = imageUrls.concat(data.urls);
-          renderImagePreviews();
-          showToast('圖片上傳成功！');
-        })
-        .catch(function (error) { handleApiError(error, '上傳失敗'); });
+    async function uploadImages(input) {
+      var files = Array.from(input.files || []);
+      if (!files.length) return;
       input.value = '';
+      if (uploadsInProgress) { showToast('請等候目前上傳完成。', true); return; }
+      if (files.length + imageUrls.length > 10) { showToast('每篇文章最多 10 張圖片。', true); return; }
+      uploadsInProgress++;
+      try {
+        for (var i = 0; i < files.length; i++) {
+          showToast('正在上傳圖片 ' + (i + 1) + '／' + files.length);
+          var data = await uploadOne(files[i]);
+          imageUrls.push(data.url);
+          renderImagePreviews();
+        }
+        showToast('圖片上傳成功！');
+      } catch (error) { handleApiError(error, '上傳失敗'); }
+      finally { uploadsInProgress--; }
     }
 
     function renderImagePreviews() {
@@ -481,6 +502,8 @@
 
     // ---- Save Article ----
     function saveArticle() {
+      if (saving) return;
+      if (uploadsInProgress) { showToast('圖片正在上傳，請等候完成後再儲存。', true); return; }
       var title = document.getElementById('editTitleInput').value.trim();
       var content = document.getElementById('editContent').value.trim();
       if (!title) { showToast('請輸入文章標題', true); return; }
@@ -493,26 +516,29 @@
         content: content,
         image: coverUrl,
         images: imageUrls,
-        date: document.getElementById('editDate').value || new Date().toISOString().split('T')[0],
+        date: document.getElementById('editDate').value || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Hong_Kong' }),
         status: document.getElementById('editStatus').value
       };
 
       var editId = document.getElementById('editId').value;
-      var url = editId ? '/api/articles/' + editId : '/api/articles';
+      if (editId) data.updatedAt = editingVersion;
+      var url = editId ? '/api/articles/' + encodeURIComponent(editId) : '/api/articles';
       var method = editId ? 'PUT' : 'POST';
 
+      saving = true;
       apiFetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       })
         .then(function (result) {
-          showToast(editId ? '文章已更新！' : '文章已發佈！');
+          showToast(data.status === 'draft' ? '草稿已儲存！' : (editId ? '文章已更新！' : '文章已發佈！'));
           resetEditor();
           loadArticles();
           showPageDirect('articles');
         })
-        .catch(function (error) { handleApiError(error, '儲存失敗'); });
+        .catch(function (error) { handleApiError(error, '儲存失敗'); })
+        .finally(function () { saving = false; });
     }
 
     // ---- Edit Article ----
@@ -527,7 +553,8 @@
       document.getElementById('editDate').value = a.date || '';
       document.getElementById('editStatus').value = a.status || 'published';
       coverUrl = a.image || '';
-      imageUrls = a.images || [];
+      imageUrls = (a.images || []).slice();
+      editingVersion = a.updatedAt || a.createdAt;
       if (coverUrl) {
         document.getElementById('coverPreview').innerHTML = '<div class="image-preview-item">' + imageHtml(coverUrl, '封面圖片') + '<button class="remove-btn" onclick="removeCover()">✕</button></div>';
       } else {
@@ -540,7 +567,7 @@
 
     // ---- Delete Article ----
     function deleteArticle(id) {
-      if (!confirm('確定要刪除呢篇文章？刪除後無法復原。')) return;
+      if (!confirm('確定要刪除這篇文章？刪除後無法復原。')) return;
       apiFetch('/api/articles/' + encodeURIComponent(id), { method: 'DELETE' })
         .then(function (result) {
           showToast('文章已刪除');
@@ -551,7 +578,9 @@
 
     // ---- Reset Editor ----
     function resetEditor() {
+      if (uploadsInProgress) { showToast('請等候圖片上傳完成後再取消。', true); return; }
       document.getElementById('editId').value = '';
+      editingVersion = null;
       document.getElementById('editTitleInput').value = '';
       document.getElementById('editCategory').value = '知識分享';
       document.getElementById('editExcerpt').value = '';

@@ -66,12 +66,14 @@ document.addEventListener('DOMContentLoaded', function () {
       // Close all
       document.querySelectorAll('.faq-item').forEach(function (i) {
         i.classList.remove('active');
+        i.querySelector('.faq-question').setAttribute('aria-expanded', 'false');
         i.querySelector('.faq-answer').style.maxHeight = null;
       });
 
       // Open clicked (if it was closed)
       if (!isActive) {
         item.classList.add('active');
+        btn.setAttribute('aria-expanded', 'true');
         answer.style.maxHeight = answer.scrollHeight + 'px';
       }
     });
@@ -99,42 +101,6 @@ document.addEventListener('DOMContentLoaded', function () {
       link.classList.add('active');
     }
   });
-
-  // ---- Articles: load from JSON ----
-  const articleContainer = document.getElementById('article-list');
-  if (articleContainer) {
-      fetch('data/articles.json')
-      .then(function (r) {
-        if (!r.ok) throw new Error('文章資料讀取失敗');
-        return r.json();
-      })
-      .then(function (articles) {
-        articles = Array.isArray(articles) ? articles.filter(function (article) {
-          return article.status !== 'draft';
-        }) : [];
-        if (!articles || articles.length === 0) {
-          articleContainer.innerHTML = '<p style="text-align:center;color:#6b7c93;grid-column:1/-1;">暫無文章，請稍後再回來查看。</p>';
-          return;
-        }
-        articleContainer.innerHTML = articles.map(function (a) {
-          const safeImage = safeImageUrl(a.image);
-          const imgHtml = safeImage
-            ? '<img src="' + escapeHtml(safeImage) + '" alt="' + escapeHtml(a.title) + '" loading="lazy">'
-            : '🏠';
-          return '<article class="article-card fade-in visible">' +
-            '<div class="thumb">' + imgHtml + '</div>' +
-            '<div class="body">' +
-            '<span class="tag">' + escapeHtml(a.category || '知識分享') + '</span>' +
-            '<h3>' + escapeHtml(a.title || '') + '</h3>' +
-            '<p>' + escapeHtml(a.excerpt || '') + '</p>' +
-            '<div class="date">' + escapeHtml(a.date || '') + '</div>' +
-            '</div></article>';
-        }).join('');
-      })
-      .catch(function () {
-        articleContainer.innerHTML = '<p style="text-align:center;color:#6b7c93;grid-column:1/-1;">暫無文章，請稍後再回來查看。</p>';
-      });
-  }
 
   // ---- Year in footer ----
   const yearEl = document.getElementById('year');

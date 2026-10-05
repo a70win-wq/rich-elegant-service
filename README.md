@@ -1,104 +1,49 @@
-# 雅博工程公司官網 - 使用說明
+# 雅博工程公司網站
 
-## 快速開始（3步搞掂）
+RICH ELEGANT SERVICE CO. 提供驗樓及驗窗服務。網站包含服務範圍、收費標準、驗樓流程、常見問題、聯絡方式，以及可管理的網誌和最新優惠。
 
-### 第1步：安裝 Node.js（只需要做一次）
-去 https://nodejs.org 下載 LTS 版本，安裝佢。
+## 本機預覽
 
-### 第2步：啟動網站
-打開「終端機」(Terminal)，輸入：
-```
-cd ~/Desktop/rich-elegant-website
-bash start.sh
-```
-或者直接雙擊 `start.sh` 檔案。
+安裝 Node.js 20 或以上版本，然後執行：
 
-### 第3步：打開瀏覽器
-- 前台網站：http://localhost:3000
-- 後台管理：http://localhost:3000/admin/
-
----
-
-## 後台管理
-
-### 登入
-本機測試可以用預設密碼：`admin123`。
-
-網站正式上線前，請喺 Vercel 設定 `ADMIN_PASSWORD`，唔好使用預設密碼。登入成功後，網站會用安全 Cookie 記住登入狀態；文章新增、修改、刪除同圖片上傳都會由伺服器再檢查一次。
-
-### 新增文章
-1. 登入後台
-2. 點擊左邊「新增文章」
-3. 填寫標題、分類、內容
-4. 上傳封面圖片同文章圖片
-5. 點擊「儲存文章」
-
-### 編輯/刪除文章
-1. 點擊左邊「文章管理」
-2. 搵到要改嘅文章
-3. 點擊「編輯」或「刪除」
-
----
-
-## 網站結構
-
-```
-rich-elegant-website/
-├── index.html          ← 首頁
-├── services.html       ← 服務範圍
-├── pricing.html        ← 收費標準
-├── process.html        ← 驗樓流程
-├── articles.html       ← 知識分享
-├── faq.html            ← 常見問題
-├── about.html          ← 關於我們 + 聯絡
-├── css/style.css       ← 網站樣式
-├── js/main.js          ← 網站功能
-├── admin/index.html    ← 後台管理
-├── server.js           ← 伺服器
-├── data/articles.json  ← 文章資料
-├── uploads/            ← 上傳嘅圖片
-├── start.sh            ← 一鍵啟動
-└── package.json        ← 依賴設定
+```sh
+npm ci
+npm start
 ```
 
----
+網站預設在 `http://localhost:3000`，管理頁面為 `http://localhost:3000/admin/`。可使用 `PORT` 指定其他連接埠。
 
-## 修改聯絡資料
+## 文章及優惠管理
 
-打開每個 HTML 檔案，搜尋「稍後提供」，改做你嘅真實資料：
-- 電話號碼
-- WhatsApp 號碼（同時要改 WhatsApp 連結入面嘅號碼）
-- Email
-- 地址
+登入後可新增、修改、刪除文章，儲存草稿，並上傳封面、相片及宣傳單圖片。優惠請選擇「最新優惠」分類。每張圖片最多 3MB，每篇文章最多 10 張內文圖片；支援 JPG、PNG、GIF 和 WebP。草稿不會在公開網站出現。
 
-WhatsApp 連結格式：`https://wa.me/852XXXXXXXX`（852 係香港區號）
+上傳完成後才可儲存文章。公開頁面會顯示文章全文及圖片，並提供全部、網誌及最新優惠分類。
 
----
+## 正式網站設定
 
-## 修改收費
+公開部署需要設定以下環境變數：
 
-打開 `pricing.html`，搵到收費部分修改。
+- `ADMIN_PASSWORD`：管理員密碼。正式網站不可使用本機預設密碼。
+- `ARTICLE_READ_WRITE_TOKEN`：私人 Vercel Blob 儲存空間，用於保存文章及草稿。
+- `BLOB_READ_WRITE_TOKEN`：公開 Vercel Blob 儲存空間，用於相片及宣傳單圖片。
+- `ADMIN_SESSION_SECRET`：可選的登入簽署密鑰；未設定時由管理員密碼產生。
 
----
+文章資料使用私人儲存，公開 API 只傳回已發佈文章。圖片儲存在公開空間，請只上傳可公開的相片及宣傳單。文章更新使用版本核對，避免同時編輯時覆蓋他人的改動。
 
-## 部署上線
+本機預設將文章保存在 `data/articles.json`，圖片保存在 `uploads/`。測試可使用 `DATA_DIR` 及 `UPLOAD_DIR` 指向獨立資料夾。未接通雲端儲存時，正式網站不會假裝儲存成功。
 
-推薦用以下免費/平價服務：
-1. **Netlify**（免費）：https://www.netlify.com - 拖拽上傳就得
-2. **Vercel**（免費）：https://vercel.com
-3. **GitHub Pages**（免費）：適合純靜態網站
+## 品牌及內容
 
-注意：Vercel 本身唔係永久硬碟。公開文章可以正常閱讀，但要喺線上長期儲存新文章同圖片，之後要接雲端資料庫／檔案儲存；本機版本會正常儲存喺 `data/articles.json` 同 `uploads/`。
+`assets/logo-icon.jpeg` 及 `assets/logo-full.jpeg` 是使用者提供的原始標誌，未修改圖片。頁面以顯示範圍調整四周空白，保留標誌比例。
 
----
+新樓驗收每呎 $3.5，二手樓及裝修驗收每呎 $4.0，最低消費均為 $1,500。預約確認後收取 $500 訂金，72 小時內交付報告，報告交付後支付尾款。花園、天台及覆驗另行報價。暫時沒有已核實的客戶評語，因此首頁不顯示評語區。
 
-## 常見問題
+電話及 WhatsApp：6412 7082。電郵：stcy0707@yahoo.com.hk。傳真：3007 0677。服務採預約制，24 小時接聽電話及 WhatsApp。
 
-**Q: 點解打開 localhost:3000 睇唔到嘢？**
-A: 確認 start.sh 有冇成功運行，睇下終端機有冇顯示「已啟動」。
+## 檢查
 
-**Q: 上傳圖片失敗？**
-A: 確認圖片唔超過 10MB，格式係 JPG/PNG/GIF/WebP。
+```sh
+npm test
+```
 
-**Q: 想改網站顏色？**
-A: 打開 `css/style.css`，改最頂嘅 CSS 變數（--primary, --accent 等）。
+測試使用獨立暫存資料，不會改動正式文章。上線前另需檢查電腦及手機畫面、管理員登入、圖片上傳、草稿、發佈、文章全文，以及重新載入後的資料保存。

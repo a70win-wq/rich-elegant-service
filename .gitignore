@@ -6,3 +6,5 @@ uploads/*
 .vercel
 .env*
 .claude/
+
+.private/

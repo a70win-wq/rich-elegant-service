@@ -9,6 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const { createArticleStorage } = require('./lib/article-storage');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_VERCEL = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
@@ -25,14 +26,19 @@ function ensureDirectory(directory) {
   if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
 }
 
-// 本地可以儲存檔案；Vercel 只讀取已部署嘅資料，唔假裝可以永久儲存。
+const articleStorage = createArticleStorage({
+  localFile: ARTICLES_FILE,
+  hosted: IS_VERCEL,
+  articleToken: process.env.ARTICLE_READ_WRITE_TOKEN,
+  imageToken: process.env.BLOB_READ_WRITE_TOKEN
+});
 if (!IS_VERCEL) {
   ensureDirectory(DATA_DIR);
   ensureDirectory(UPLOAD_DIR);
   if (!fs.existsSync(ARTICLES_FILE)) fs.writeFileSync(ARTICLES_FILE, '[]', 'utf8');
-} else {
-  // Vercel 嘅程式資料夾未必有 uploads，而且唔係永久硬碟。
-  ensureDirectory(UPLOAD_DIR);
+}
+function asyncRoute(handler) {
+  return function (req, res, next) { Promise.resolve(handler(req, res, next)).catch(next); };
 }
 
 // ---- Middleware ----
@@ -47,28 +53,23 @@ app.use(function (req, res, next) {
 });
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-app.use(function (req, res, next) {
-  const blockedPaths = new Set([
-    '/server.js',
-    '/package.json',
-    '/package-lock.json',
-    '/vercel.json',
-    '/start.sh',
-    '/api/index.js'
-  ]);
-  if (blockedPaths.has(req.path) || req.path.indexOf('/.env') === 0 || req.path.indexOf('/.git') === 0) {
-    return res.sendStatus(404);
-  }
-  next();
+// Serve only the public assets; data, source, tests and environment files remain private.
+const publicFiles = new Set(['index.html', 'services.html', 'pricing.html', 'process.html', 'articles.html', 'faq.html', 'about.html', 'not-found.html']);
+app.use('/assets', express.static(path.join(__dirname, 'assets'), { dotfiles: 'deny' }));
+app.use('/css', express.static(path.join(__dirname, 'css'), { dotfiles: 'deny' }));
+app.use('/js', express.static(path.join(__dirname, 'js'), { dotfiles: 'deny' }));
+if (!IS_VERCEL) app.use('/uploads', express.static(UPLOAD_DIR, { dotfiles: 'deny' }));
+app.get('/', function (req, res) { res.sendFile(path.join(__dirname, 'index.html')); });
+app.get('/:page', function (req, res, next) {
+  if (!publicFiles.has(req.params.page)) return next();
+  res.sendFile(path.join(__dirname, req.params.page));
 });
-app.use(express.static(__dirname, { dotfiles: 'deny', index: 'index.html' }));
-app.use('/uploads', express.static(UPLOAD_DIR, { dotfiles: 'deny' }));
 
 // ---- 後台登入 ----
 function getAdminPassword() {
   const configuredPassword = (process.env.ADMIN_PASSWORD || '').trim();
   if (configuredPassword) return configuredPassword;
-  // 本地保留舊流程方便使用；公開部署一定要設定環境變數。
+  // A configured password is required for a public deployment.
   if (!IS_VERCEL && process.env.NODE_ENV !== 'production') return 'admin123';
   return null;
 }
@@ -141,23 +142,25 @@ function clearSessionCookie(res) {
 
 function requireAdmin(req, res, next) {
   if (!getAdminPassword()) {
-    return res.status(503).json({ error: '線上未設定管理員密碼，請先設定 ADMIN_PASSWORD' });
+    return res.status(503).json({ error: '管理員登入尚未開通，請聯絡網站管理員。' });
   }
   if (!hasAdminSession(req)) return res.status(401).json({ error: '請先登入後台' });
   next();
 }
 
 function requireWritableStorage(req, res, next) {
-  if (IS_VERCEL) {
-    return res.status(503).json({ error: '線上儲存未連接，文章修改請先接上雲端資料庫或儲存空間' });
-  }
+  if (!articleStorage.canWrite) return res.status(503).json({ error: '文章儲存尚未接通，請稍後再試。' });
+  next();
+}
+function requireUploadStorage(req, res, next) {
+  if (!articleStorage.canUpload) return res.status(503).json({ error: '圖片儲存尚未接通，請稍後再試。' });
   next();
 }
 
 app.post('/api/auth/login', function (req, res) {
   const expectedPassword = getAdminPassword();
   if (!expectedPassword) {
-    return res.status(503).json({ error: '線上未設定管理員密碼，請先設定 ADMIN_PASSWORD' });
+    return res.status(503).json({ error: '管理員登入尚未開通，請聯絡網站管理員。' });
   }
   const suppliedPassword = req.body && typeof req.body.password === 'string' ? req.body.password : '';
   if (!safeEqual(suppliedPassword, expectedPassword)) {
@@ -170,7 +173,7 @@ app.post('/api/auth/login', function (req, res) {
 
 app.get('/api/auth/session', function (req, res) {
   if (!getAdminPassword()) {
-    return res.status(503).json({ error: '線上未設定管理員密碼，請先設定 ADMIN_PASSWORD' });
+    return res.status(503).json({ error: '管理員登入尚未開通，請聯絡網站管理員。' });
   }
   if (!hasAdminSession(req)) return res.status(401).json({ authenticated: false });
   res.json({ authenticated: true });
@@ -182,16 +185,6 @@ app.post('/api/auth/logout', function (req, res) {
 });
 
 // ---- 文章資料 ----
-function readArticles() {
-  try {
-    const data = fs.readFileSync(ARTICLES_FILE, 'utf8');
-    const articles = JSON.parse(data);
-    return Array.isArray(articles) ? articles : [];
-  } catch (error) {
-    return [];
-  }
-}
-
 function makeHttpError(status, message, code) {
   const error = new Error(message);
   error.status = status;
@@ -199,17 +192,9 @@ function makeHttpError(status, message, code) {
   return error;
 }
 
-function saveArticles(articles) {
-  if (IS_VERCEL) throw makeHttpError(503, '線上儲存未連接，文章修改請先接上雲端資料庫或儲存空間', 'PERSISTENCE_UNAVAILABLE');
-  ensureDirectory(DATA_DIR);
-  const temporaryFile = ARTICLES_FILE + '.' + process.pid + '.tmp';
-  fs.writeFileSync(temporaryFile, JSON.stringify(articles, null, 2), 'utf8');
-  fs.renameSync(temporaryFile, ARTICLES_FILE);
-}
-
 function textValue(value, field, maxLength) {
   if (value === undefined) return undefined;
-  if (typeof value !== 'string') throw makeHttpError(400, field + '格式唔正確');
+  if (typeof value !== 'string') throw makeHttpError(400, field + '格式不正確');
   const trimmed = value.trim();
   if (trimmed.length > maxLength) throw makeHttpError(400, field + '太長');
   return trimmed;
@@ -218,10 +203,10 @@ function textValue(value, field, maxLength) {
 function imageList(value) {
   if (value === undefined) return undefined;
   if (!Array.isArray(value) || value.length > MAX_ARTICLE_IMAGES) {
-    throw makeHttpError(400, '文章圖片數量唔正確');
+    throw makeHttpError(400, '文章圖片數量不正確');
   }
   return value.map(function (image) {
-    if (typeof image !== 'string' || image.length > 2000) throw makeHttpError(400, '文章圖片連結唔正確');
+    if (typeof image !== 'string' || image.length > 2000) throw makeHttpError(400, '文章圖片連結不正確');
     return image;
   });
 }
@@ -230,10 +215,10 @@ function validateArticle(article) {
   if (!article.title) throw makeHttpError(400, '請輸入文章標題');
   if (!article.content) throw makeHttpError(400, '請輸入文章內容');
   if (article.status !== 'published' && article.status !== 'draft') {
-    throw makeHttpError(400, '文章狀態唔正確');
+    throw makeHttpError(400, '文章狀態不正確');
   }
   if (article.date && !/^\d{4}-\d{2}-\d{2}$/.test(article.date)) {
-    throw makeHttpError(400, '文章日期格式唔正確');
+    throw makeHttpError(400, '文章日期格式不正確');
   }
 }
 
@@ -272,8 +257,8 @@ function buildArticle(body, existing) {
   return article;
 }
 
-function getVisibleArticles(req) {
-  const articles = readArticles();
+async function getVisibleArticles(req) {
+  const articles = await articleStorage.read();
   return hasAdminSession(req) ? articles : articles.filter(function (article) {
     return article.status !== 'draft';
   });
@@ -304,62 +289,50 @@ function cleanupRemovedImages(removed, remainingArticles) {
   });
 }
 
-// 公開文章只會見到已發佈內容；後台登入後先會見到草稿。
-app.get('/api/articles', function (req, res) {
-  res.json(getVisibleArticles(req));
-});
-
-app.get('/api/articles/:id', function (req, res) {
-  const article = getVisibleArticles(req).find(function (item) { return item.id === req.params.id; });
-  if (!article) return res.status(404).json({ error: '文章唔存在' });
+app.get('/api/articles', asyncRoute(async function (req, res) {
+  const articles = await getVisibleArticles(req);
+  res.json(articles);
+}));
+app.get('/api/articles/:id', asyncRoute(async function (req, res) {
+  const article = (await getVisibleArticles(req)).find(function (item) { return item.id === req.params.id; });
+  if (!article) return res.status(404).json({ error: '文章不存在' });
   res.json(article);
-});
-
+}));
 app.get('/api/health', function (req, res) {
-  res.json({ ok: true, storage: IS_VERCEL ? 'read-only' : 'local' });
+  res.json({ ok: true, storage: articleStorage.mode, uploads: articleStorage.canUpload });
 });
-
-app.post('/api/articles', requireAdmin, requireWritableStorage, function (req, res) {
-  const articles = readArticles();
+app.post('/api/articles', requireAdmin, requireWritableStorage, asyncRoute(async function (req, res) {
   const newArticle = buildArticle(req.body || {}, null);
-  articles.unshift(newArticle);
-  saveArticles(articles);
+  await articleStorage.mutate(function (articles) { articles.unshift(newArticle); });
   res.json({ success: true, article: newArticle });
-});
-
-app.put('/api/articles/:id', requireAdmin, requireWritableStorage, function (req, res) {
-  const articles = readArticles();
-  const index = articles.findIndex(function (article) { return article.id === req.params.id; });
-  if (index === -1) return res.status(404).json({ error: '文章唔存在' });
-  const updated = buildArticle(req.body || {}, articles[index]);
-  updated.updatedAt = new Date().toISOString();
-  articles[index] = updated;
-  saveArticles(articles);
+}));
+app.put('/api/articles/:id', requireAdmin, requireWritableStorage, asyncRoute(async function (req, res) {
+  const updated = await articleStorage.mutate(function (articles) {
+    const index = articles.findIndex(function (article) { return article.id === req.params.id; });
+    if (index === -1) throw makeHttpError(404, '文章不存在');
+    const previous = articles[index];
+    if (req.body.updatedAt !== undefined && req.body.updatedAt !== (previous.updatedAt || previous.createdAt)) {
+      throw makeHttpError(409, '文章已被更新，請重新載入後再編輯。');
+    }
+    const article = buildArticle(req.body || {}, previous);
+    article.updatedAt = new Date().toISOString();
+    articles[index] = article;
+    return article;
+  });
   res.json({ success: true, article: updated });
-});
-
-app.delete('/api/articles/:id', requireAdmin, requireWritableStorage, function (req, res) {
-  const articles = readArticles();
-  const index = articles.findIndex(function (article) { return article.id === req.params.id; });
-  if (index === -1) return res.status(404).json({ error: '文章唔存在' });
-  const removed = articles[index];
-  const remaining = articles.filter(function (article) { return article.id !== req.params.id; });
-  saveArticles(remaining);
-  cleanupRemovedImages(removed, remaining);
+}));
+app.delete('/api/articles/:id', requireAdmin, requireWritableStorage, asyncRoute(async function (req, res) {
+  const deleted = await articleStorage.mutate(function (articles) {
+    const index = articles.findIndex(function (article) { return article.id === req.params.id; });
+    if (index === -1) throw makeHttpError(404, '文章不存在');
+    const removed = articles.splice(index, 1)[0];
+    return { removed, remaining: articles.slice() };
+  });
+  if (!IS_VERCEL) cleanupRemovedImages(deleted.removed, deleted.remaining);
   res.json({ success: true });
-});
+}));
 
 // ---- 圖片上傳 ----
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, UPLOAD_DIR);
-  },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, Date.now() + '-' + crypto.randomBytes(6).toString('hex') + ext);
-  }
-});
-
 const allowedImages = new Map([
   ['.jpg', 'image/jpeg'],
   ['.jpeg', 'image/jpeg'],
@@ -369,8 +342,8 @@ const allowedImages = new Map([
 ]);
 
 const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024, files: MAX_ARTICLE_IMAGES },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024, files: MAX_ARTICLE_IMAGES },
   fileFilter: function (req, file, cb) {
     const extension = path.extname(file.originalname).toLowerCase();
     if (allowedImages.get(extension) === file.mimetype) return cb(null, true);
@@ -378,18 +351,33 @@ const upload = multer({
   }
 });
 
-app.post('/api/upload', requireAdmin, requireWritableStorage, upload.single('image'), function (req, res) {
-  if (!req.file) return res.status(400).json({ error: '冇收到圖片' });
-  res.json({ success: true, url: '/uploads/' + req.file.filename, filename: req.file.filename });
-});
-
-app.post('/api/upload-multiple', requireAdmin, requireWritableStorage, upload.array('images', MAX_ARTICLE_IMAGES), function (req, res) {
-  if (!req.files || req.files.length === 0) return res.status(400).json({ error: '冇收到圖片' });
-  res.json({
-    success: true,
-    urls: req.files.map(function (file) { return '/uploads/' + file.filename; })
-  });
-});
+async function saveUploadedImage(file) {
+  const data = file.buffer;
+  const isJpeg = data.length > 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  const isPng = data.length > 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const isGif = data.subarray(0, 6).toString() === 'GIF87a' || data.subarray(0, 6).toString() === 'GIF89a';
+  const isWebp = data.subarray(0, 4).toString() === 'RIFF' && data.subarray(8, 12).toString() === 'WEBP';
+  if (!({ 'image/jpeg': isJpeg, 'image/png': isPng, 'image/gif': isGif, 'image/webp': isWebp })[file.mimetype]) {
+    throw makeHttpError(400, '圖片內容或格式不正確，請選擇 JPG、PNG、GIF 或 WebP。');
+  }
+  const cloudUrl = await articleStorage.storeImage(file);
+  if (cloudUrl) return cloudUrl;
+  ensureDirectory(UPLOAD_DIR);
+  const filename = crypto.randomUUID() + path.extname(file.originalname).toLowerCase();
+  fs.writeFileSync(path.join(UPLOAD_DIR, filename), data);
+  return '/uploads/' + filename;
+}
+app.post('/api/upload', requireAdmin, requireUploadStorage, upload.single('image'), asyncRoute(async function (req, res) {
+  if (!req.file) return res.status(400).json({ error: '沒有收到圖片' });
+  const url = await saveUploadedImage(req.file);
+  res.json({ success: true, url });
+}));
+app.post('/api/upload-multiple', requireAdmin, requireUploadStorage, upload.array('images', MAX_ARTICLE_IMAGES), asyncRoute(async function (req, res) {
+  if (!req.files || !req.files.length) return res.status(400).json({ error: '沒有收到圖片' });
+  const urls = [];
+  for (const file of req.files) urls.push(await saveUploadedImage(file));
+  res.json({ success: true, urls });
+}));
 
 // ---- 後台管理頁面 ----
 app.get('/admin', function (req, res) {
@@ -400,16 +388,18 @@ app.get('/admin/*', function (req, res) {
   res.sendFile(path.join(__dirname, 'admin', 'index.html'));
 });
 
+app.use(function (req, res) { res.status(404).sendFile(path.join(__dirname, 'not-found.html')); });
+
 // ---- 錯誤處理 ----
 app.use(function (err, req, res, next) {
   if (res.headersSent) return next(err);
   const isUploadError = err instanceof multer.MulterError || err.code === 'LIMIT_FILE_SIZE' || err.status === 400;
   const status = err.status || (isUploadError ? 400 : 500);
   console.error(err.message);
-  res.status(status).json({ error: status >= 500 ? '伺服器暫時出錯，請稍後再試' : err.message });
+  res.status(status).json({ error: err.code === 'LIMIT_FILE_SIZE' ? '每張圖片請勿超過 3MB。' : status >= 500 ? '服務暫時無法使用，請稍後再試。' : err.message });
 });
 
-// 直接執行 server.js 先開本地伺服器；被 Vercel require 時唔會偷偷開 port。
+// Only the local entry point starts a listening server.
 if (require.main === module) {
   app.listen(PORT, function () {
     console.log('雅博工程公司官網已啟動：' + PORT);
